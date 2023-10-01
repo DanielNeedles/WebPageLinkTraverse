@@ -21,11 +21,11 @@ This Python script is a web crawler that starts from a given URL, downloads the 
    - Add the child links to the stack.
  - Print the link tree.
 
-# Note:
+## Note:
 
  - Ensure that the 'lxml' library is installed for parsing both HTML and XML content.
  - Be responsible and respect website terms of service and robots.txt files when web crawling.
  
-#USAGE: 
+##USAGE: 
 
 webpage --url|u webpage --anchor|-a anchor --depth|-d depth_level [--brokenlinks|-b] [--spelling|-s] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]")
