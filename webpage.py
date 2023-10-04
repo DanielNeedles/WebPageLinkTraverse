@@ -28,6 +28,9 @@
 #
 # Usage:
 #   USAGE: webpage url [--anchor|-a]  [--depth|-d] [--brokenlinks|-b] [--spelling|-s] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]
+#
+#   Example:
+#     python webpage.py -b -s -u https://site -a substring_of_site -d  4 >  webpage.txt
 
 import requests
 from bs4 import BeautifulSoup
@@ -38,12 +41,6 @@ import string
 import re
 
 import argparse
-
-def check_positive(value):
-    ivalue = int(value)
-    if ivalue <= 0:
-        raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
-    return ivalue
 
 def usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth):
     # Create argument parser
@@ -69,18 +66,20 @@ def usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth)
     depth = args.depth
     anchor = args.anchor
 
-    print(f"""
-    args             = {args}
-    broken_links     = {broken_links}
-    spelling         = {spelling}
-    naughty_wordlist = {naughty_wordlist}
-    verbose          = {verbose}
-    url              = {url}
-    depth            = {depth}
-    anchor           = {anchor}
-    """)
+    # If verbose, let user know
+    if verbose:
+        print(f"""
+        args             = {args}
+        broken_links     = {broken_links}
+        spelling         = {spelling}
+        naughty_wordlist = {naughty_wordlist}
+        verbose          = {verbose}
+        url              = {url}
+        depth            = {depth}
+        anchor           = {anchor}
+        """)
 
-    #Implied -H or --help OR the command arguments do not make sense.
+    # Implied -H or --help OR the command arguments do not make sense.
     if not url or not depth or not anchor or not any([broken_links, spelling]):
         print("USAGE: --url|u webpage --anchor|-a anchor --depth|-d depth_level [--brokenlinks|-b] [--spelling|-s] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]")
         exit(-1)
@@ -99,7 +98,6 @@ def download_page(url):
 # Function to extract links from an HTML page
 def extract_links(html_content, base_url):
     links = set()
-    #parser = 'html.parser'
     parser = "lxml"  # Use lxml as the parser
     soup = BeautifulSoup(html_content, parser)
     for a_tag in soup.find_all('a', href=True):
@@ -201,11 +199,7 @@ def spell_check_html_xml(input_string,spell_checker,verbose):
     return misspelled_words
 
 # Function to perform web crawling
-def crawl_web(start_url, max_depth, anchor, verbose):
-    visited_links = set()
-    link_graph = {}  # Dictionary to store the links between webpages
-
-    stack = [(start_url, None, 0)]  # Tuple format: (current_url, parent_url, depth)
+def crawl_web(start_url, max_depth, anchor, verbose, broken_links, spelling, visited_links, link_graph, stack):
 
     # Initialize the spell checker
     spell_checker = enchant.request_dict("en_US")  # You can change "en_US" to the desired language
@@ -222,19 +216,19 @@ def crawl_web(start_url, max_depth, anchor, verbose):
                 visited_links.add(current_url)
 
                 # Check spellin of webpage
-                if anchor in current_url.lower():
-                  misspelled_words = spell_check_html_xml(html_content,spell_checker,verbose)
-                  if misspelled_words:
-                    print("\n")
-                    print(f"Misspellings on {current_url}")
-                    for word in misspelled_words:
-                      try:
-                          print(word + " suggestions: " + str(spell_checker.suggest(word)))
-                          #print(word)
-                      except Exception as e:
-                          print("Could not print out word or suggestions due the the error:", e)
-                    
-                    print("\n\n")
+                if spelling:
+                    if anchor in current_url.lower():
+                        misspelled_words = spell_check_html_xml(html_content,spell_checker,verbose)
+                        if misspelled_words:
+                          print("\n")
+                          print(f"Misspellings on {current_url}")
+                          for word in misspelled_words:
+                            try:
+                                print(word + " suggestions: " + str(spell_checker.suggest(word)))
+                                #print(word)
+                            except Exception as e:
+                                print("Could not print out word or suggestions due the the error:", e)
+                          print("\n")
 
                 # Extract links from the current page
                 links = extract_links(html_content, current_url)
@@ -267,7 +261,10 @@ def crawl_web(start_url, max_depth, anchor, verbose):
                     if current_url.lower().startswith("mailto"):
                         link_graph[parent_url].append(current_url)
                     else:
-                        link_graph[parent_url].append(current_url + "-BROKEN")
+                        if broken_links:
+                            link_graph[parent_url].append(current_url + "-BROKEN")
+                        else:
+                            link_graph[parent_url].append(current_url)
     return link_graph
 
 # Function to print the link tree
@@ -290,9 +287,23 @@ if __name__ == "__main__":
 
     # Get and parse commandline arguments
     broken_links,spelling,naughty_wordlist,verbose,url,anchor,depth = usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth)
-    depth=int(depth)
-    link_graph = crawl_web(url, depth, anchor, verbose)
+    depth=int(depth)+1  ## Add 1 for "root", a fictious root node in case multiple links are supplied
+    visited_links = set()
+
+    # Space delimited list of links allowed, but they all use the same anchor
+    urls = url.split()
+    top_link = 'root'
+    link_graph = {}  # Dictionary to store the links between webpages
+    link_graph[top_link] = []
+    #stack = [('root', None, -1)] 
+    stack = [] 
+    for link in urls:
+        if verbose:
+            print(f"PROCESS LINK: {link}")
+        link_graph[top_link].append(link)
+        stack.append((link, None, 0))  # Tuple format: (current_url, parent_url, depth)
+        crawl_web(link, depth, anchor, verbose, broken_links, spelling, visited_links, link_graph, stack)
 
     # Print the link tree
     print(f"\nLink Tree for {url}:\n")
-    print_link_tree(link_graph, url)
+    print_link_tree(link_graph, top_link)
