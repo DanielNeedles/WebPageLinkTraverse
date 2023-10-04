@@ -141,7 +141,10 @@ def process_string(input_string, verbose):
 def spell_check_html_xml(input_string,spell_checker,verbose):
 
     # Parse the HTML/XML content using BeautifulSoup
-    soup = BeautifulSoup(input_string, 'html.parser')
+    #parser = "html.parser"
+    parser = "lxml"  # Use lxml as the parser
+    soup = BeautifulSoup(input_string, parser)
+    print(soup)
 
     # Extract the text content from the parsed document
     text_content = soup.get_text(" ")
