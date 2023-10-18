@@ -25,12 +25,15 @@
 # Note:
 # - Ensure that the 'lxml' library is installed for parsing both HTML and XML content.
 # - Be responsible and respect website terms of service and robots.txt files when web crawling.
+# - To install Language_check pip will not work.
+#       git clone -b patch-1 https://github.com/SpartorA/language-check.git
+#       python setup.py install
 #
 # Usage:
-#   USAGE: webpage url [--anchor|-a]  [--depth|-d] [--brokenlinks|-b] [--spelling|-s] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]
+#   USAGE: webpage url [--anchor|-a]  [--depth|-d] [--brokenlinks|-b] [--spelling|-s] [--punctuation|-p] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]
 #
 #   Example:
-#     python webpage.py -b -s -u https://site -a substring_of_site -d  4 >  webpage.txt
+#     python webpage.py -b -s -p -u https://site -a substring_of_site -d  4 >  webpage.txt
 
 import requests
 from bs4 import BeautifulSoup
@@ -39,16 +42,18 @@ import lxml
 import enchant
 import string
 import re
+import language_check
 
 import argparse
 
-def usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth):
+def usage(broken_links, spelling, punctuation, naughty_wordlist, verbose, url, anchor, depth):
     # Create argument parser
     parser = argparse.ArgumentParser(description="Webpage tool")
 
     # Add arguments
     parser.add_argument('-b','--brokenlinks', action="store_true", dest="broken_links", help='Detect broken links.')
     parser.add_argument('-s','--spelling', action="store_true", dest="spelling", help='Detect bad spelling.')
+    parser.add_argument('-p','--punctuation', action="store_true", dest="punctuation", help='Detect bad punctuation.')
     parser.add_argument('-n','--naughtywordlist', action="store_true", dest="naughty_wordlist", help='Skip these words on spell check.')
     parser.add_argument('-v','--verbose', action="store_true", dest="verbose", help='Provides extra debugging.')
     parser.add_argument('-u','--url', action="store", type=str, dest="url", required=True, help='Web address to start at and follow all links.')
@@ -60,6 +65,7 @@ def usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth)
     args = parser.parse_args()
     broken_links = args.broken_links
     spelling = args.spelling
+    punctuation = args.punctuation
     naughty_wordlist = args.naughty_wordlist
     verbose = args.verbose
     url = args.url
@@ -72,6 +78,7 @@ def usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth)
         args             = {args}
         broken_links     = {broken_links}
         spelling         = {spelling}
+        punctuation      = {punctuation}
         naughty_wordlist = {naughty_wordlist}
         verbose          = {verbose}
         url              = {url}
@@ -81,18 +88,19 @@ def usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth)
 
     # Implied -H or --help OR the command arguments do not make sense.
     if not url or not depth or not anchor or not any([broken_links, spelling]):
-        print("USAGE: --url|u webpage --anchor|-a anchor --depth|-d depth_level [--brokenlinks|-b] [--spelling|-s] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]")
+        print("USAGE: --url|u webpage --anchor|-a anchor --depth|-d depth_level [--brokenlinks|-b] [--spelling|-s] [--punctuation|-p] [--naughtywordlist|-n] [--verbose|-v] [--help|-h]")
         exit(-1)
-    return broken_links,spelling,naughty_wordlist,verbose,url,anchor,depth
+    return broken_links,spelling,punctuation,naughty_wordlist,verbose,url,anchor,depth
 
 # Function to download the contents of a webpage
-def download_page(url):
+def download_page(parent_url,url):
     try:
-        response = requests.get(url)
+        response = requests.get(url, headers={"User-Agent": "XY"})  ## Work around 406 errors.
         response.raise_for_status()  # Check for HTTP errors
+        #print(f"{parent_url} => {url} is OK with {response.status_code} .")
         return response.text
     except requests.exceptions.RequestException as e:
-        print(f"Error downloading {url}: {e}")
+        print(f"Error on page {parent_url} when downloading {url}: {e}")
         return None
 
 # Function to extract links from an HTML page
@@ -144,7 +152,7 @@ def spell_check_html_xml(input_string,spell_checker,verbose):
     #parser = "html.parser"
     parser = "lxml"  # Use lxml as the parser
     soup = BeautifulSoup(input_string, parser)
-    print(soup)
+    #print(soup)
 
     # Extract the text content from the parsed document
     text_content = soup.get_text(" ")
@@ -166,7 +174,8 @@ def spell_check_html_xml(input_string,spell_checker,verbose):
 
     # Initialize a list to store misspelled words
     misspelled_words = []
-    ok_words = ['elastiflow', 'sublicense', 'sublicenses', 'decompile', 'humanreadable', 'nonpersonally', 'splunk', 'sflow', 'namespaced', 'elasticsearch', 'analytics', 'cyber', 'ebooks', 'codespaces', 'kibana', 'distro', 'cowart', 'flagbased', 'glibc', 'redpanda', 'netflow', 'changelog', 'uptodate', 'maxmind', 'junos', 'roadmap', 'stdout', 'cribl', 'serverclass', 'multinode', 'realtime', 'flowsec', 'xsmall', 'xlarge', 'virtualized', 'singlemode', 'rackawareness', 'grafana', 'flowssec', 'lifecycle', 'logstash', 'dockerfile', 'fortinet', 'fortigate', 'citrix', 'plixer', 'ziften', 'pensando', 'cubro', 'gigamon', 'geospatial', 'tcpdump', 'pluribus', 'pmacct', 'procera', 'netscaler', 'ziften', 'pensando', 'sandvine', 'antrea', 'trammellch', 'cognitix', 'calix', 'recordssecond', 'remediate', 'telco','performant', 'unsampled', 'amasol', 'hubspot', 'licensors', 'cyberattack', 'cyberattacks', 'unsampled', 'reimagined', 'vmware', 'namespace', 'namespaces', 'encap', 'tanzu', 'logzio', 'ipaddr', 'hostname', 'async', 'enricher', 'config', 'lookup', 'lookups', 'reindexed', 'reindexing', 'reindex', 'changeme', 'kubernetes', 'linux', 'natively', 'jsonpretty', 'nameserver', 'inband', 'schema', 'schemas', 'opensearch', 'floweval', 'multicloud', 'digitalization', 'samplicator', 'geoscheme', 'datagrams', 'phion', 'renewables', 'squarespace', 'clickstream', 'exfiltration', 'deliverables', 'enrichers', 'atlanta', 'flowcoll', 'sonicwall', 'efauthpassword', 'efprivpassword', 'systemd', 'downsampling', 'liveness', 'sonicwall', 'downsampling', 'serverless', 'viptela', 'splunkbase', 'filesystem', 'ubiquiti', 'hsflowd', 'mikrotik', 'riskiq', 'errored', 'kafka', 'sophos', 'astaro', 'phion', 'netintact', 'velocloud', 'vxlan', 'codec', 'filebeat', 'appname', 'webhook', 'fortigatelab', 'hostnames', 'robcowart', 'manousos', 'solarwinds', 'germain', 'geolocation', 'geolite', 'ndjson', 'systemct', 'goller', 'annika', 'wickert', 'freie', 'netze', 'manousos', 'mainimport', 'timefunc', 'remediating', 'noauth', 'nopriv', 'packetparser', 'flowsets', 'libpcap', 'powertools', 'systemctl', 'signup', 'boolean', 'runtime', 'misconfiguration', 'anonymizing', 'subnet', 'msgid', 'ident', 'sdwan', 'uptime' ]
+    ok_words = ['elastiflow', 'sublicense', 'sublicenses', 'decompile', 'humanreadable', 'nonpersonally', 'splunk', 'sflow', 'namespaced', 'elasticsearch', 'analytics', 'cyber', 'ebooks', 'codespaces', 'kibana', 'distro', 'cowart', 'flagbased', 'glibc', 'redpanda', 'netflow', 'changelog', 'uptodate', 'maxmind', 'junos', 'roadmap', 'stdout', 'cribl', 'serverclass', 'multinode', 'realtime', 'flowsec', 'xsmall', 'xlarge', 'virtualized', 'singlemode', 'rackawareness', 'grafana', 'flowssec', 'lifecycle', 'logstash', 'dockerfile', 'fortinet', 'fortigate', 'citrix', 'plixer', 'ziften', 'pensando', 'cubro', 'gigamon', 'geospatial', 'tcpdump', 'pluribus', 'pmacct', 'procera', 'netscaler', 'ziften', 'pensando', 'sandvine', 'antrea', 'trammellch', 'cognitix', 'calix', 'recordssecond', 'remediate', 'telco','performant', 'unsampled', 'amasol', 'hubspot', 'licensors', 'cyberattack', 'cyberattacks', 'unsampled', 'reimagined', 'vmware', 'namespace', 'namespaces', 'encap', 'tanzu', 'logzio', 'ipaddr', 'hostname', 'async', 'enricher', 'config', 'lookup', 'lookups', 'reindexed', 'reindexing', 'reindex', 'changeme', 'kubernetes', 'linux', 'natively', 'jsonpretty', 'nameserver', 'inband', 'schema', 'schemas', 'opensearch', 'floweval', 'multicloud', 'digitalization', 'samplicator', 'geoscheme', 'datagrams', 'phion', 'renewables', 'squarespace', 'clickstream', 'exfiltration', 'deliverables', 'enrichers', 'atlanta', 'flowcoll', 'sonicwall', 'efauthpassword', 'efprivpassword', 'systemd', 'downsampling', 'liveness', 'sonicwall', 'downsampling', 'serverless', 'viptela', 'splunkbase', 'filesystem', 'ubiquiti', 'hsflowd', 'mikrotik', 'riskiq', 'errored', 'kafka', 'sophos', 'astaro', 'phion', 'netintact', 'velocloud', 'vxlan', 'codec', 'filebeat', 'appname', 'webhook', 'fortigatelab', 'hostnames', 'robcowart', 'manousos', 'solarwinds', 'germain', 'geolocation', 'geolite', 'ndjson', 'systemct', 'goller', 'annika', 'wickert', 'freie', 'netze', 'manousos', 'mainimport', 'timefunc', 'remediating', 'noauth', 'nopriv', 'packetparser', 'flowsets', 'libpcap', 'powertools', 'systemctl', 'signup', 'boolean', 'runtime', 'misconfiguration', 'anonymizing', 'subnet', 'msgid', 'ident', 'sdwan', 'uptime', 'defacto', 'unicolld', 'myhost', 'nmapfs', 'nmaps', 'sysctl', 'mkdir', 'chown', 'misconfigured', 'precompiled', 'alertmanager', 'alertmanagers', 'timeseries', 'datasource', 'centiwatts', 'milliwatts', 'microwatts', 'nanowatts', 'milliamps', 'kiloamps', 'datastores', 'netif', 'microvolts', 'nanovolts', 'mydevice', 'configs', 'bundler', 'srcaddr', 'dstaddr', 'srcport', 'dstport', 'dataset', 'datasets', 'nexthop', 'playout', 'rollup', 'prepend', 'userinfo', 'datalink', 'deciseconds', 'centiseconds', 'milliseconds', 'timetick', 'timeticks', 'subnetwork', 'ipfix', 'snmpwalk', 'backoff', 'datastore', 'searchable', 'millijoules', 'microjoules', 'nanojoules', 'decihertz', 'centihertz', 'millihertz', 'deciwatts', 'nanoamps', 'microamps', 'ulimits', 'memlock', 'nofile', 'nproc', 'fsize', 'lifecycle', 'keychain', 'amongst' ]
+#   ok_words = ['elastiflow', 'sublicense', 'sublicenses', 'decompile', 'humanreadable', 'nonpersonally', 'splunk', 'sflow', 'namespaced', 'elasticsearch', 'analytics', 'cyber', 'ebooks', 'codespaces', 'kibana', 'distro', 'cowart', 'flagbased', 'glibc', 'redpanda', 'netflow', 'changelog', 'uptodate', 'maxmind', 'junos', 'roadmap', 'stdout', 'cribl', 'serverclass', 'multinode', 'realtime', 'flowsec', 'xsmall', 'xlarge', 'virtualized', 'singlemode', 'rackawareness', 'grafana', 'flowssec', 'lifecycle', 'logstash', 'dockerfile', 'fortinet', 'fortigate', 'citrix', 'plixer', 'ziften', 'pensando', 'cubro', 'gigamon', 'geospatial', 'tcpdump', 'pluribus', 'pmacct', 'procera', 'netscaler', 'ziften', 'pensando', 'sandvine', 'antrea', 'trammellch', 'cognitix', 'calix', 'recordssecond', 'remediate', 'telco','performant', 'unsampled', 'amasol', 'hubspot', 'licensors', 'cyberattack', 'cyberattacks', 'unsampled', 'reimagined', 'vmware', 'namespace', 'namespaces', 'encap', 'tanzu', 'logzio', 'ipaddr', 'hostname', 'async', 'enricher', 'config', 'lookup', 'lookups', 'reindexed', 'reindexing', 'reindex', 'changeme', 'kubernetes', 'linux', 'natively', 'jsonpretty', 'nameserver', 'inband', 'schema', 'schemas', 'opensearch', 'floweval', 'multicloud', 'digitalization', 'samplicator', 'geoscheme', 'datagrams', 'phion', 'renewables', 'squarespace', 'clickstream', 'exfiltration', 'deliverables', 'enrichers', 'atlanta', 'flowcoll', 'sonicwall', 'efauthpassword', 'efprivpassword', 'systemd', 'downsampling', 'liveness', 'sonicwall', 'downsampling', 'serverless', 'viptela', 'splunkbase', 'filesystem', 'ubiquiti', 'hsflowd', 'mikrotik', 'riskiq', 'errored', 'kafka', 'sophos', 'astaro', 'phion', 'netintact', 'velocloud', 'vxlan', 'codec', 'filebeat', 'appname', 'webhook', 'fortigatelab', 'hostnames', 'robcowart', 'manousos', 'solarwinds', 'germain', 'geolocation', 'geolite', 'ndjson', 'systemct', 'goller', 'annika', 'wickert', 'freie', 'netze', 'manousos', 'mainimport', 'timefunc', 'remediating', 'noauth', 'nopriv', 'packetparser', 'flowsets', 'libpcap', 'powertools', 'systemctl', 'signup', 'boolean', 'runtime', 'misconfiguration', 'anonymizing', 'subnet', 'msgid', 'ident', 'sdwan', 'uptime']
 
     # Check the spelling of each word and add misspelled words to the list
     for word in words:
@@ -202,7 +211,7 @@ def spell_check_html_xml(input_string,spell_checker,verbose):
     return misspelled_words
 
 # Function to perform web crawling
-def crawl_web(start_url, max_depth, anchor, verbose, broken_links, spelling, visited_links, link_graph, stack):
+def crawl_web(start_url, max_depth, anchor, verbose, broken_links, spelling, punctuation, visited_links, link_graph, stack, i):
 
     # Initialize the spell checker
     spell_checker = enchant.request_dict("en_US")  # You can change "en_US" to the desired language
@@ -214,11 +223,11 @@ def crawl_web(start_url, max_depth, anchor, verbose, broken_links, spelling, vis
                 print(f"Crawling {current_url}, Depth: {depth} of {max_depth}")
 
             # Download the page
-            html_content = download_page(current_url)
+            html_content = download_page(parent_url,current_url)
             if html_content is not None:
                 visited_links.add(current_url)
 
-                # Check spellin of webpage
+                # Check spelling of webpage
                 if spelling:
                     if anchor in current_url.lower():
                         misspelled_words = spell_check_html_xml(html_content,spell_checker,verbose)
@@ -232,6 +241,19 @@ def crawl_web(start_url, max_depth, anchor, verbose, broken_links, spelling, vis
                             except Exception as e:
                                 print("Could not print out word or suggestions due the the error:", e)
                           print("\n")
+
+                # Check punctuation
+                if punctuation:
+                    print(f"Viewing {current_url}, Depth: {depth} of {max_depth}")
+                    # Extract the text content from the parsed document
+                    parser = "lxml"  # Use lxml as the parser
+                    soup = BeautifulSoup(html_content, parser)
+                    text_content = soup.get_text(" ")
+                    matches = punctuation.check(text_content)
+                    for mistake in matches:
+                        if "spelling" not in mistake:
+                            i+=1
+                            print(f"Grammar: {i}: {mistake}")
 
                 # Extract links from the current page
                 links = extract_links(html_content, current_url)
@@ -287,9 +309,10 @@ if __name__ == "__main__":
     anchor = ''
     url = ""  # Replace with your desired starting URL
     depth = 4  # Maximum depth to crawl
+    punctuation = False
 
     # Get and parse commandline arguments
-    broken_links,spelling,naughty_wordlist,verbose,url,anchor,depth = usage(broken_links, spelling, naughty_wordlist, verbose, url, anchor, depth)
+    broken_links,spelling,punctuation,naughty_wordlist,verbose,url,anchor,depth = usage(broken_links, spelling, punctuation, naughty_wordlist, verbose, url, anchor, depth)
     depth=int(depth)+1  ## Add 1 for "root", a fictious root node in case multiple links are supplied
     visited_links = set()
 
@@ -300,12 +323,15 @@ if __name__ == "__main__":
     link_graph[top_link] = []
     #stack = [('root', None, -1)] 
     stack = [] 
+    if punctuation:
+        punctuation = language_check.LanguageTool('en-US')
+    i=0 # Count punctuation errors globally
     for link in urls:
         if verbose:
             print(f"PROCESS LINK: {link}")
         link_graph[top_link].append(link)
         stack.append((link, None, 0))  # Tuple format: (current_url, parent_url, depth)
-        crawl_web(link, depth, anchor, verbose, broken_links, spelling, visited_links, link_graph, stack)
+        crawl_web(link, depth, anchor, verbose, broken_links, spelling, punctuation, visited_links, link_graph, stack, i)
 
     # Print the link tree
     print(f"\nLink Tree for {url}:\n")
